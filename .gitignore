@@ -1,0 +1,46 @@
+# Python bits
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.renv
+.pytest_cache/
+
+# Databases & local persistent state
+*.db
+*.db-journal
+buffer*.db
+buffer*.db-journal
+
+# Logs
+*.log
+edge/logs/
+cloud/logs/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS bits
+.DS_Store
+Thumbs.db
+
+# Large Datasets (Optional, depending on user preference, but recommended)
+# archive-NASA*/

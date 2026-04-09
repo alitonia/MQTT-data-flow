@@ -1,14 +1,43 @@
 version: '3.8'
 
 services:
-  mosquitto:
+
+  # ======================
+  # MQTT BROKERS (SCALE)
+  # ======================
+  mosquitto1:
     image: eclipse-mosquitto:2.0
-    container_name: mosquitto-broker
+    container_name: mosquitto1
     ports:
-      - "1883:1883"
+      - "1884:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
 
+  mosquitto2:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto2
+    ports:
+      - "1885:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  # ======================
+  # LOAD BALANCER (GATEWAY)
+  # ======================
+  haproxy:
+    image: haproxy:latest
+    container_name: mqtt-lb
+    ports:
+      - "1883:1883"   # ENTRY POINT cho tất cả edge
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    depends_on:
+      - mosquitto1
+      - mosquitto2
+
+  # ======================
+  # INFLUXDB
+  # ======================
   influxdb:
     image: influxdb:2.7
     container_name: influxdb
@@ -24,6 +53,9 @@ services:
     volumes:
       - influxdb_data:/var/lib/influxdb2
 
+  # ======================
+  # GRAFANA
+  # ======================
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -38,14 +70,17 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
 
+  # ======================
+  # CLOUD CONSUMER
+  # ======================
   cloud-worker:
     build: ./cloud
     container_name: cloud-worker
     depends_on:
-      - mosquitto
+      - haproxy
       - influxdb
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - INFLUX_URL=http://influxdb:8086
@@ -53,13 +88,16 @@ services:
       - INFLUX_ORG=my-org
       - INFLUX_BUCKET=my-bucket
 
+  # ======================
+  # EDGE NODES (DATASET)
+  # ======================
   edge-node-1:
     build: ./edge
     container_name: edge-node-1
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - DATA_FILE=/app/data/train_FD001.txt
@@ -73,9 +111,9 @@ services:
     build: ./edge
     container_name: edge-node-2
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - DATA_FILE=/app/data/train_FD002.txt
@@ -89,9 +127,9 @@ services:
     build: ./edge
     container_name: edge-node-3
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - DATA_FILE=/app/data/train_FD003.txt
@@ -105,9 +143,9 @@ services:
     build: ./edge
     container_name: edge-node-4
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - DATA_FILE=/app/data/train_FD004.txt
@@ -117,13 +155,16 @@ services:
     volumes:
       - "./archive-NASA C-MAPSS-1 Turbofan Engine Degradation Dataset:/app/data:ro"
 
+  # ======================
+  # EDGE WILD (SIMULATION)
+  # ======================
   edge-wild-1:
     build: ./edge-wild
     container_name: edge-wild-1
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - NODE_ID=wild-01
@@ -135,9 +176,9 @@ services:
     build: ./edge-wild
     container_name: edge-wild-2
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - NODE_ID=wild-02
@@ -149,9 +190,9 @@ services:
     build: ./edge-wild
     container_name: edge-wild-3
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - NODE_ID=wild-03
@@ -163,9 +204,9 @@ services:
     build: ./edge-wild
     container_name: edge-wild-4
     depends_on:
-      - mosquitto
+      - haproxy
     environment:
-      - MQTT_BROKER=mosquitto
+      - MQTT_BROKER=haproxy
       - MQTT_PORT=1883
       - MQTT_TOPIC=factory/turbofan/data
       - NODE_ID=wild-04

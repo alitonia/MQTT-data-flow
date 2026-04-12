@@ -19,6 +19,8 @@ DISCONNECT_DURATION = int(os.getenv('DISCONNECT_DURATION', 15)) # dis trong 15 c
 # Global state
 is_connected = False
 db_lock = threading.Lock()
+current_sim_delay = float(os.getenv('SIM_DELAY', 0.1))
+delay_lock = threading.Lock()
 
 
 def init_db():
@@ -46,6 +48,7 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to MQTT Broker!")
         is_connected = True
+        client.subscribe("factory/control/modulation")
     else:
         print(f"Failed to connect, return code {rc}")
 
@@ -54,6 +57,20 @@ def on_disconnect(client, userdata, rc):
     global is_connected
     print("Disconnected from MQTT Broker!")
     is_connected = False
+
+
+def on_message(client, userdata, msg):
+    global current_sim_delay
+    if msg.topic == "factory/control/modulation":
+        try:
+            command = json.loads(msg.payload.decode('utf-8'))
+            if "new_delay_sec" in command:
+                with delay_lock:
+                    old_delay = current_sim_delay
+                    current_sim_delay = float(command["new_delay_sec"])
+                    print(f"🚦 [MODULATION] Server commanded delay change: {old_delay}s -> {current_sim_delay}s")
+        except Exception as e:
+            print(f"Error parsing modulation command: {e}")
 
 
 def publish_worker(client):
@@ -167,7 +184,9 @@ def process_data(client):
                     print(f"[{DATASET}] Buffered batch #{batch_count}")
                     batch = []
 
-                time.sleep(float(os.getenv('SIM_DELAY', 0.1)))
+                with delay_lock:
+                    delay = current_sim_delay
+                time.sleep(delay)
 
     except FileNotFoundError:
         print(f"Data file {DATA_FILE} not found.")
@@ -192,6 +211,7 @@ def main():
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
+    client.on_message = on_message
 
     # Run publish worker in background
     t = threading.Thread(target=publish_worker, args=(client,), daemon=True)

@@ -214,6 +214,17 @@ services:
       - SIM_DELAY=0.2
       - BATCH_SIZE=10
 
+  # ======================
+  # SYSTEM METRICS
+  # ======================
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    depends_on:
+      - influxdb
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+
 volumes:
   influxdb_data:
   grafana_data:

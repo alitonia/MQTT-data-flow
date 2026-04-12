@@ -35,15 +35,27 @@ influx_client = InfluxDBClient(
 
 write_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
+# ======================
+# RATE MODULATION STATE
+# ======================
+message_count = 0
+load_lock = threading.Lock()
+current_edge_delay = 0.1
+primary_mqtt_client = None
+
 
 # ======================
 # CALLBACKS
 # ======================
 def on_connect(client, userdata, flags, rc):
+    global primary_mqtt_client
     broker = userdata["broker"]
     if rc == 0:
         print(f"✅ Connected to {broker}")
         client.subscribe(MQTT_TOPIC)
+        # Capture one successful client capability to publish feedback commands
+        if primary_mqtt_client is None:
+            primary_mqtt_client = client
     else:
         print(f"❌ Failed to connect to {broker}, rc={rc}")
 
@@ -107,10 +119,46 @@ def on_message(client, userdata, msg):
             record=points
         )
 
+        global message_count
+        with load_lock:
+            message_count += len(points)
+
         print(f" [{broker}] Wrote {len(points)} records to InfluxDB\n")
 
     except Exception as e:
         print(f" [{broker}] Error processing message: {e}")
+
+# ======================
+# MODERATOR THREAD
+# ======================
+def cloud_moderator_loop():
+    global message_count, current_edge_delay, primary_mqtt_client
+    while True:
+        time.sleep(10) # Evaluate loads every 10 seconds
+        
+        with load_lock:
+            rate = message_count / 10.0
+            message_count = 0
+            
+        if not primary_mqtt_client:
+            continue
+            
+        new_delay = current_edge_delay
+        
+        # 300 msg/s indicates bottleneck territory where we command Edge sensors to slow back
+        if rate > 300: 
+            new_delay = min(1.0, current_edge_delay + 0.1)
+        # < 100 msg/s means we have deep buffer capability; tell devices they can speed up natively
+        elif rate < 100: 
+            new_delay = max(0.01, current_edge_delay - 0.05)
+            
+        new_delay = round(new_delay, 3)
+        if new_delay != current_edge_delay:
+            current_edge_delay = new_delay
+            print(f"\n🚦 [CLOUD CONTROLLER] Inbound Ingestion Rate is {rate} msg/sec.")
+            print(f"🚦 [CLOUD CONTROLLER] Broadcasting new commanded Edge publish delay: {current_edge_delay}s\n")
+            payload = json.dumps({"new_delay_sec": current_edge_delay})
+            primary_mqtt_client.publish("factory/control/modulation", payload, qos=1)
 
 
 # ======================
@@ -147,6 +195,10 @@ def main():
         t.daemon = True
         t.start()
         threads.append(t)
+
+    # Launch dynamic rate moderator
+    t_mod = threading.Thread(target=cloud_moderator_loop, daemon=True)
+    t_mod.start()
 
     # giữ process sống
     while True:
